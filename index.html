@@ -446,9 +446,7 @@
     </button>
   </div>
   <div id="hist-list"></div>
-  <div id="hist-footer">
-    <button id="btn-clear">Borrar historial</button>
-  </div>
+  <div id="hist-footer"></div>
 </div>
 
 <div id="toast"></div>
@@ -497,17 +495,19 @@
   }
 
   // ─── HISTORY ─────────────────────────────────────────────
-  function getHistory() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
-  }
-  function saveHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
+  async function getHistory() {
+    const { data, error } = await sb
+      .from('scan_history')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-  function addToHistory(codigo, status, detail) {
-    const h = getHistory();
-    h.unshift({ id: Date.now().toString(), codigo, status, detail, ts: Date.now() });
-    if (h.length > 50) h.pop();
-    saveHistory(h);
-    renderHistory();
+    if (error) {
+      console.error('Error cargando historial:', error);
+      return [];
+    }
+
+    return data;
   }
 
   function formatDate(ts) {
@@ -520,29 +520,33 @@
 
   const STATUS_LABEL = { ok: '✓ Acceso permitido', warn: '⚠ Ya utilizado', bad: '✗ QR no válido' };
 
-  function renderHistory() {
-    const h = getHistory();
-    histCount.textContent = `${h.length} escaneo${h.length !== 1 ? 's' : ''}`;
-    histBadge.textContent = h.length;
-    histBadge.style.display = h.length ? 'flex' : 'none';
-    histFooter.style.display = h.length ? 'block' : 'none';
+      async function renderHistory() {
+        const h = await getHistory();
 
-    if (h.length === 0) {
-      histList.innerHTML = `
-        <div class="history-empty">
-          <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
-          <p>Sin escaneos recientes</p>
-        </div>`;
-      return;
-    }
-    histList.innerHTML = h.map(r => `
-      <div class="history-item">
-        <span class="h-date">${formatDate(r.ts)}</span>
-        <div class="h-data">${escHtml(r.codigo)}</div>
-        <div class="h-status ${r.status}">${STATUS_LABEL[r.status] || r.status}</div>
-      </div>`).join('');
-  }
+        histCount.textContent = `${h.length} escaneo${h.length !== 1 ? 's' : ''}`;
+        histBadge.textContent = h.length;
+        histBadge.style.display = h.length ? 'flex' : 'none';
+        histFooter.style.display = 'none';
 
+        if (h.length === 0) {
+          histList.innerHTML = `
+            <div class="history-empty">
+              <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+              <p>Sin escaneos recientes</p>
+            </div>`;
+          return;
+        }
+
+        histList.innerHTML = h.map(r => `
+          <div class="history-item">
+            <span class="h-date">${formatDate(new Date(r.created_at).getTime())}</span>
+            <div class="h-data">${escHtml(r.codigo)}</div>
+            <div class="h-status ${r.estado}">
+              ${STATUS_LABEL[r.estado] || r.estado}
+            </div>
+          </div>
+        `).join('');
+      }
   // ─── CAMERA ──────────────────────────────────────────────
   async function startCamera() {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
@@ -666,27 +670,60 @@
       .eq('codigo', codigo)
       .single();
 
+    // ❌ QR NO EXISTE
     if (error || !data) {
-      // QR no existe en la base de datos
-      addToHistory(codigo, 'bad', null);
+
+      await sb.from('scan_history').insert({
+        codigo: codigo,
+        estado: 'bad',
+        area: null,
+        mesa: null,
+        combo: null,
+        tipo: null
+      });
+
+      await renderHistory(); // 🔥 ACTUALIZA EN VIVO
+
       showModal('bad', codigo, null);
       return;
     }
 
+    // ⚠️ YA USADO
     if (data.usado) {
-      // QR ya fue usado
-      addToHistory(codigo, 'warn', data);
+
+      await sb.from('scan_history').insert({
+        codigo: codigo,
+        estado: 'warn',
+        area: data.area,
+        mesa: data.mesa,
+        combo: data.combo,
+        tipo: data.tipo
+      });
+
+      await renderHistory(); // 🔥
+
       showModal('warn', codigo, data);
       return;
     }
 
-    // Marcar como usado
+    // ✅ MARCAR COMO USADO
     await sb
       .from('qr_codes')
       .update({ usado: true, usado_at: new Date().toISOString() })
       .eq('codigo', codigo);
 
-    addToHistory(codigo, 'ok', data);
+    // ✅ GUARDAR HISTORIAL
+    await sb.from('scan_history').insert({
+      codigo: codigo,
+      estado: 'ok',
+      area: data.area,
+      mesa: data.mesa,
+      combo: data.combo,
+      tipo: data.tipo
+    });
+
+    await renderHistory(); // 🔥
+
     showModal('ok', codigo, data);
   }
 
@@ -758,7 +795,7 @@
   document.getElementById('btn-newtab').addEventListener('click', () => window.open(location.href, '_blank'));
   document.getElementById('btn-close-history').addEventListener('click', closeHistory);
   histBackdrop.addEventListener('click', closeHistory);
-  document.getElementById('btn-clear').addEventListener('click', () => { saveHistory([]); renderHistory(); });
+  //document.getElementById('btn-clear').addEventListener('click', () => { saveHistory([]); renderHistory(); });
   document.getElementById('btn-close-modal').addEventListener('click', closeModal);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
