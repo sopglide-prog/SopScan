@@ -687,7 +687,13 @@
       showModal('bad', codigo, null);
       return;
     }
-
+if (data.tipo === 'regalo') {
+  await sb.from('qr_codes').update({ usos: (data.usos || 0) + 1 }).eq('codigo', codigo);
+  await sb.from('scan_history').insert({ codigo, estado: 'ok', area: data.area, mesa: data.mesa, combo: 'REGALO', tipo: data.tipo });
+  await renderHistory();
+  showModal('ok', codigo, data);
+  return;
+}
     // ⚠️ YA USADO
     if (data.usado) {
 
