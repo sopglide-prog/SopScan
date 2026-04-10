@@ -732,7 +732,7 @@ async function handleResult(codigo) {
       detail += `<strong>Mesa:</strong> ${data.mesa}<br>`;
       detail += `<strong>Combo:</strong> ${escHtml(data.combo)}<br>`;
       detail += `<strong>Tipo:</strong> ${escHtml(data.tipo)}`;
-      if (data.tipo === 'invitado') detail += ` #${data.numero_invitado}`;
+    if (data.tipo === 'invitado') detail += `<br><strong>Nombre:</strong> ${escHtml(data.nombre || 'Sin nombre')}`;
       if (data.tipo === 'bebidas' && data.trago) detail += `<br><strong>Trago:</strong> ${escHtml(data.trago)}`;
       if (status === 'warn' && data.usado_at) {
         const d = new Date(data.usado_at);
