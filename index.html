@@ -540,7 +540,7 @@
         histList.innerHTML = h.map(r => `
           <div class="history-item">
             <span class="h-date">${formatDate(new Date(r.created_at).getTime())}</span>
-            <div class="h-data">${escHtml(r.codigo)}</div>
+           <div class="h-data">${r.nombre ? escHtml(r.nombre) : escHtml(r.codigo)}</div>
             <div class="h-status ${r.estado}">
               ${STATUS_LABEL[r.estado] || r.estado}
             </div>
@@ -658,80 +658,67 @@
   }
 
   // ─── HANDLE RESULT (con Supabase) ────────────────────────
-  async function handleResult(codigo) {
-    try { beep.play(); } catch(e) {}
-    if (navigator.vibrate) navigator.vibrate(150);
-    paused = true;
+// ─── HANDLE RESULT (con Supabase) ────────────────────────
+async function handleResult(codigo) {
+  try { beep.play(); } catch(e) {}
+  if (navigator.vibrate) navigator.vibrate(150);
+  paused = true;
 
-    // Buscar en Supabase (tabla: qr_codes, campo: codigo)
-    const { data, error } = await sb
-      .from('qr_codes')
-      .select('*')
-      .eq('codigo', codigo)
-      .single();
+  const { data, error } = await sb
+    .from('qr_codes')
+    .select('*')
+    .eq('codigo', codigo)
+    .single();
 
-    // ❌ QR NO EXISTE
-    if (error || !data) {
+  // ❌ QR NO EXISTE
+  if (error || !data) {
+    await sb.from('scan_history').insert({
+      codigo: codigo, estado: 'bad',
+      area: null, mesa: null, combo: null, tipo: null, nombre: ''
+    });
+    await renderHistory();
+    showModal('bad', codigo, null);
+    return;
+  }
 
-      await sb.from('scan_history').insert({
-        codigo: codigo,
-        estado: 'bad',
-        area: null,
-        mesa: null,
-        combo: null,
-        tipo: null
-      });
+  // 🎁 QR DE REGALO — reutilizable ilimitado
+  if (data.tipo === 'regalo') {
+    await sb.from('qr_codes').update({ usos: (data.usos || 0) + 1 }).eq('codigo', codigo);
+    await sb.from('scan_history').insert({
+      codigo: codigo, estado: 'ok',
+      area: data.area, mesa: data.mesa, combo: 'REGALO', tipo: data.tipo,
+      nombre: data.nombre || ''
+    });
+    await renderHistory();
+    showModal('ok', codigo, data);
+    return;
+  }
 
-      await renderHistory(); // 🔥 ACTUALIZA EN VIVO
+  // ⚠️ YA USADO
+  if (data.usado) {
+    await sb.from('scan_history').insert({
+      codigo: codigo, estado: 'warn',
+      area: data.area, mesa: data.mesa, combo: data.combo, tipo: data.tipo,
+      nombre: data.nombre || ''
+    });
+    await renderHistory();
+    showModal('warn', codigo, data);
+    return;
+  }
 
-      showModal('bad', codigo, null);
-      return;
-    }
-if (data.tipo === 'regalo') {
-  await sb.from('qr_codes').update({ usos: (data.usos || 0) + 1 }).eq('codigo', codigo);
-  await sb.from('scan_history').insert({ codigo, estado: 'ok', area: data.area, mesa: data.mesa, combo: 'REGALO', tipo: data.tipo });
+  // ✅ MARCAR COMO USADO
+  await sb.from('qr_codes')
+    .update({ usado: true, usado_at: new Date().toISOString() })
+    .eq('codigo', codigo);
+
+  await sb.from('scan_history').insert({
+    codigo: codigo, estado: 'ok',
+    area: data.area, mesa: data.mesa, combo: data.combo, tipo: data.tipo,
+    nombre: data.nombre || ''
+  });
   await renderHistory();
   showModal('ok', codigo, data);
-  return;
 }
-    // ⚠️ YA USADO
-    if (data.usado) {
-
-      await sb.from('scan_history').insert({
-        codigo: codigo,
-        estado: 'warn',
-        area: data.area,
-        mesa: data.mesa,
-        combo: data.combo,
-        tipo: data.tipo
-      });
-
-      await renderHistory(); // 🔥
-
-      showModal('warn', codigo, data);
-      return;
-    }
-
-    // ✅ MARCAR COMO USADO
-    await sb
-      .from('qr_codes')
-      .update({ usado: true, usado_at: new Date().toISOString() })
-      .eq('codigo', codigo);
-
-    // ✅ GUARDAR HISTORIAL
-    await sb.from('scan_history').insert({
-      codigo: codigo,
-      estado: 'ok',
-      area: data.area,
-      mesa: data.mesa,
-      combo: data.combo,
-      tipo: data.tipo
-    });
-
-    await renderHistory(); // 🔥
-
-    showModal('ok', codigo, data);
-  }
 
   // ─── MODAL ───────────────────────────────────────────────
   function showModal(status, codigo, data) {
