@@ -577,19 +577,37 @@
           return;
         }
 
-        histList.innerHTML = h.map(r => `
+        histList.innerHTML = h.map(r => {
+          // Construye "Área Mesa X"
+          const mesaTxt = [r.area, r.mesa ? 'Mesa ' + r.mesa : ''].filter(Boolean).join(' ');
+
+          let linea = '';
+          if (r.tipo === 'bebidas') {
+            // 🍹 Bebidas: muestra MESA + TRAGOS canjeados
+            const tragos = r.trago ? String(r.trago).replace(/\+/g, ' · ') : '(sin tragos)';
+            linea = (mesaTxt ? mesaTxt + ' — ' : '') + tragos;
+          } else if (r.nombre) {
+            // 👤 Invitado / Regalo: muestra NOMBRE + MESA
+            linea = escHtml(r.nombre) + (mesaTxt ? ' — ' + mesaTxt : '');
+          } else if (mesaTxt) {
+            // Sin nombre pero con mesa
+            linea = mesaTxt;
+          } else {
+            // Fallback: el código crudo
+            linea = escHtml(r.codigo);
+          }
+          // En bebidas el escapado se hace acá porque concatenamos texto plano
+          if (r.tipo === 'bebidas') linea = escHtml(linea);
+
+          return `
           <div class="history-item">
             <span class="h-date">${formatDate(new Date(r.created_at).getTime())}</span>
-           <div class="h-data">${
-             r.nombre
-               ? escHtml(r.nombre) + (r.area || r.mesa ? ' — ' + [r.area, r.mesa ? 'Mesa ' + r.mesa : ''].filter(Boolean).join(' ') : '')
-               : escHtml(r.codigo)
-           }</div>
+            <div class="h-data">${linea}</div>
             <div class="h-status ${r.estado}">
               ${STATUS_LABEL[r.estado] || r.estado}
             </div>
-          </div>
-        `).join('');
+          </div>`;
+        }).join('');
       }
   // ─── CAMERA ──────────────────────────────────────────────
   async function startCamera() {
@@ -753,7 +771,7 @@ async function handleResult(codigo) {
     await sb.from('scan_history').insert({
       codigo: codigo, estado: 'ok',
       area: data.area, mesa: data.mesa, combo: 'REGALO', tipo: data.tipo,
-      nombre: data.nombre || ''
+      nombre: data.nombre || '', trago: data.trago || null
     });
     await renderHistory();
     showModal('ok', codigo, data);
@@ -765,7 +783,7 @@ async function handleResult(codigo) {
     await sb.from('scan_history').insert({
       codigo: codigo, estado: 'warn',
       area: data.area, mesa: data.mesa, combo: data.combo, tipo: data.tipo,
-      nombre: data.nombre || ''
+      nombre: data.nombre || '', trago: data.trago || null
     });
     await renderHistory();
     showModal('warn', codigo, data);
@@ -780,7 +798,7 @@ async function handleResult(codigo) {
   await sb.from('scan_history').insert({
     codigo: codigo, estado: 'ok',
     area: data.area, mesa: data.mesa, combo: data.combo, tipo: data.tipo,
-    nombre: data.nombre || ''
+    nombre: data.nombre || '', trago: data.trago || null
   });
   await renderHistory();
   showModal('ok', codigo, data);
